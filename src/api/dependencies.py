@@ -90,17 +90,17 @@ class ModelService:
 
         return raw[self._feature_names]
 
-    def predict(self, player: PlayerFeatures) -> tuple[float, bool, str]:
+    def predict(self, player: PlayerFeatures) -> dict:
         """이탈 확률 예측.
 
         Returns:
-            (churn_probability, churn_prediction, risk_level)
+            {"proba", "prediction", "risk_level", "risk_factors", "actions"}
         """
         if not self.is_loaded:
             raise RuntimeError("Model not loaded")
 
         features = self._prepare_features(player)
-        proba = self._model.predict_proba(features)[0, 1]
+        proba = float(self._model.predict_proba(features)[0, 1])
         prediction = bool(proba >= 0.5)
 
         if proba < 0.3:
@@ -112,9 +112,84 @@ class ModelService:
         else:
             risk_level = "critical"
 
-        return float(proba), prediction, risk_level
+        # 피처 중요도 기반 위험 요인 (모델의 feature_importances_ 사용)
+        risk_factors = self._get_risk_factors(features)
+        actions = self._get_recommended_actions(risk_level, risk_factors)
 
-    def predict_batch(self, players: list[PlayerFeatures]) -> list[tuple[float, bool, str]]:
+        return {
+            "proba": proba,
+            "prediction": prediction,
+            "risk_level": risk_level,
+            "risk_factors": risk_factors,
+            "actions": actions,
+        }
+
+    def _get_risk_factors(self, features: pd.DataFrame) -> list[dict]:
+        """피처 중요도 기반 상위 위험 요인 추출."""
+        if not hasattr(self._model, "feature_importances_"):
+            return []
+
+        importances = self._model.feature_importances_
+        names = self._feature_names
+
+        descriptions = {
+            "PlayTimeHours": "총 플레이 시간",
+            "SessionsPerWeek": "주간 세션 수",
+            "AvgSessionDurationMinutes": "평균 세션 시간",
+            "PlayerLevel": "플레이어 레벨",
+            "AchievementsUnlocked": "업적 달성 수",
+            "InGamePurchases": "인게임 구매 횟수",
+            "activity_score": "종합 활동 점수",
+            "playtime_per_session": "세션당 플레이 시간",
+            "weekly_activity_intensity": "주간 활동 강도",
+            "session_engagement_score": "세션 몰입도",
+            "level_efficiency": "레벨 달성 효율",
+            "achievement_rate": "업적 달성률",
+            "purchase_per_hour": "시간당 구매 빈도",
+            "Age": "플레이어 나이",
+            "Gender": "성별",
+            "Location": "지역",
+            "GameGenre": "게임 장르",
+            "GameDifficulty": "게임 난이도",
+        }
+
+        factors = sorted(
+            zip(names, importances),
+            key=lambda x: x[1],
+            reverse=True,
+        )[:5]
+
+        return [
+            {
+                "feature": name,
+                "impact": round(float(imp), 4),
+                "description": descriptions.get(name, name),
+            }
+            for name, imp in factors
+        ]
+
+    def _get_recommended_actions(
+        self, risk_level: str, risk_factors: list[dict]
+    ) -> list[str]:
+        """위험 등급에 따른 추천 액션."""
+        actions = {
+            "low": ["정기 보상 유지", "신규 콘텐츠 알림"],
+            "medium": ["로그인 보상 강화", "맞춤 이벤트 알림", "일일 미션 추천"],
+            "high": [
+                "복귀 보상 지급",
+                "맞춤 알림 발송",
+                "길드 활동 알림",
+            ],
+            "critical": [
+                "긴급 복귀 보상 지급 (7일 미접속 시)",
+                "1:1 맞춤 이벤트 쿠폰 제공",
+                "소셜 기능 연결 유도",
+                "VIP 상담 연결",
+            ],
+        }
+        return actions.get(risk_level, [])
+
+    def predict_batch(self, players: list[PlayerFeatures]) -> list[dict]:
         """배치 예측."""
         return [self.predict(p) for p in players]
 

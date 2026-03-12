@@ -8,6 +8,7 @@ from src.api.schemas import (
     BatchPredictionResponse,
     PlayerFeatures,
     PredictionResponse,
+    RiskFactor,
 )
 
 router = APIRouter(prefix="/predict", tags=["prediction"])
@@ -20,11 +21,13 @@ async def predict_single(
     model: ModelService = Depends(get_model_service),
 ):
     """단일 유저 이탈 예측."""
-    proba, pred, risk = model.predict(player)
+    result = model.predict(player)
     return PredictionResponse(
-        churn_probability=round(proba, 4),
-        churn_prediction=pred,
-        risk_level=risk,
+        churn_probability=round(result["proba"], 4),
+        churn_prediction=result["prediction"],
+        risk_level=result["risk_level"],
+        top_risk_factors=[RiskFactor(**f) for f in result["risk_factors"]],
+        recommended_actions=result["actions"],
     )
 
 
@@ -39,14 +42,16 @@ async def predict_batch(
 
     predictions = []
     high_risk = 0
-    for i, (proba, pred, risk) in enumerate(results):
+    for i, r in enumerate(results):
         predictions.append(PredictionResponse(
             player_id=str(i),
-            churn_probability=round(proba, 4),
-            churn_prediction=pred,
-            risk_level=risk,
+            churn_probability=round(r["proba"], 4),
+            churn_prediction=r["prediction"],
+            risk_level=r["risk_level"],
+            top_risk_factors=[RiskFactor(**f) for f in r["risk_factors"]],
+            recommended_actions=r["actions"],
         ))
-        if risk in ("high", "critical"):
+        if r["risk_level"] in ("high", "critical"):
             high_risk += 1
 
     return BatchPredictionResponse(

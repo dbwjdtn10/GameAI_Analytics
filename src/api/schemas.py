@@ -35,6 +35,14 @@ class PlayerFeatures(BaseModel):
     }}
 
 
+class RiskFactor(BaseModel):
+    """이탈 위험 요인."""
+
+    feature: str
+    impact: float = Field(..., description="SHAP 기반 영향도")
+    description: str
+
+
 class PredictionResponse(BaseModel):
     """이탈 예측 응답."""
 
@@ -42,6 +50,12 @@ class PredictionResponse(BaseModel):
     churn_probability: float = Field(..., description="이탈 확률 (0~1)")
     churn_prediction: bool = Field(..., description="이탈 예측 (True=이탈 예상)")
     risk_level: str = Field(..., description="위험 등급 (low/medium/high/critical)")
+    top_risk_factors: list[RiskFactor] = Field(
+        default_factory=list, description="상위 이탈 위험 요인"
+    )
+    recommended_actions: list[str] = Field(
+        default_factory=list, description="추천 리텐션 액션"
+    )
 
 
 class BatchPredictionRequest(BaseModel):

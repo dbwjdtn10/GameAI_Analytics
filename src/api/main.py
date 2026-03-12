@@ -10,7 +10,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from src.api.dependencies import model_service
-from src.api.routes import health, predict
+from src.api.middleware import RequestLoggingMiddleware
+from src.api.routes import health, model_info, predict, segment
 
 
 @asynccontextmanager
@@ -32,8 +33,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(RequestLoggingMiddleware)
+
 app.include_router(health.router)
 app.include_router(predict.router, prefix="/api/v1")
+app.include_router(segment.router, prefix="/api/v1")
+app.include_router(model_info.router, prefix="/api/v1")
 
 
 if __name__ == "__main__":

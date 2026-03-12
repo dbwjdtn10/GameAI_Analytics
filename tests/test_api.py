@@ -61,6 +61,8 @@ def test_predict_single_success(client, api_key):
     assert 0 <= data["churn_probability"] <= 1
     assert isinstance(data["churn_prediction"], bool)
     assert data["risk_level"] in ("low", "medium", "high", "critical")
+    assert isinstance(data["top_risk_factors"], list)
+    assert isinstance(data["recommended_actions"], list)
 
 
 def test_predict_single_no_api_key(client):
@@ -97,3 +99,40 @@ def test_predict_single_validation_error(client, api_key):
         headers={"X-API-Key": api_key},
     )
     assert resp.status_code == 422
+
+
+def test_model_info(client, api_key):
+    resp = client.get(
+        "/api/v1/model/info",
+        headers={"X-API-Key": api_key},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "model_type" in data
+    assert data["feature_count"] > 0
+
+
+def test_feature_importance(client, api_key):
+    resp = client.get(
+        "/api/v1/model/features/importance",
+        headers={"X-API-Key": api_key},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["features"]) > 0
+    assert data["features"][0]["importance"] >= data["features"][-1]["importance"]
+
+
+def test_segment_classify(client, api_key):
+    resp = client.post(
+        "/api/v1/segment/classify",
+        json=SAMPLE_PLAYER,
+        headers={"X-API-Key": api_key},
+    )
+    if resp.status_code == 503:
+        pytest.skip("Segmenter model not loaded")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "segment" in data
+    assert "strategy" in data
+    assert isinstance(data["strategy"], list)
