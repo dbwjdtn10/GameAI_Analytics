@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import joblib
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -90,7 +91,6 @@ def page_overview():
 
     st.divider()
 
-    # 이탈 분포
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("이탈 분포")
@@ -103,13 +103,14 @@ def page_overview():
 
     with c2:
         st.subheader("장르별 이탈률")
-        genre_churn = df.groupby("GameGenre")["is_churned"].mean().sort_values(ascending=False)
+        genre_churn = (
+            df.groupby("GameGenre")["is_churned"].mean().sort_values(ascending=False)
+        )
         fig = px.bar(x=genre_churn.index, y=genre_churn.values,
                      labels={"x": "장르", "y": "이탈률"},
                      color=genre_churn.values, color_continuous_scale="RdYlGn_r")
         st.plotly_chart(fig, use_container_width=True)
 
-    # 주요 피처 분포
     st.subheader("주요 피처 분포 (이탈 vs 유지)")
     feat = st.selectbox("피처 선택", [
         "PlayTimeHours", "SessionsPerWeek", "AvgSessionDurationMinutes",
@@ -139,7 +140,6 @@ def page_model_performance():
         st.error("예측 데이터를 생성할 수 없습니다.")
         return
 
-    # 메트릭
     from sklearn.metrics import (
         accuracy_score,
         f1_score,
@@ -158,7 +158,6 @@ def page_model_performance():
     st.divider()
 
     col1, col2 = st.columns(2)
-
     with col1:
         st.subheader("ROC Curve")
         fpr, tpr, _ = roc_curve(y_test, y_proba)
@@ -177,7 +176,6 @@ def page_model_performance():
         fig.update_layout(xaxis_title="Recall", yaxis_title="Precision")
         st.plotly_chart(fig, use_container_width=True)
 
-    # Confusion Matrix
     st.subheader("Confusion Matrix")
     cm = confusion_matrix(y_test, y_pred)
     fig = px.imshow(cm, text_auto=True,
@@ -186,7 +184,6 @@ def page_model_performance():
                     color_continuous_scale="Blues")
     st.plotly_chart(fig, use_container_width=True)
 
-    # Feature Importance
     st.subheader("Feature Importance")
     if hasattr(model, "feature_importances_"):
         feature_path = MODEL_DIR / "feature_names.txt"
@@ -199,13 +196,200 @@ def page_model_performance():
                          color="importance", color_continuous_scale="Viridis")
             st.plotly_chart(fig, use_container_width=True)
 
-    # SHAP 이미지
     st.subheader("SHAP Analysis")
     shap_path = MODEL_DIR / "shap_summary.png"
     if shap_path.exists():
         st.image(str(shap_path), caption="SHAP Summary Plot")
     else:
         st.warning("SHAP 분석 결과가 없습니다. `python scripts/evaluate.py`를 실행하세요.")
+
+
+def page_segment():
+    """유저 세그먼트 페이지."""
+    st.title("👥 유저 세그먼트")
+
+    seg_path = MODEL_DIR / "segmenter.joblib"
+    if not seg_path.exists():
+        st.error("세그먼트 모델이 없습니다. `python scripts/segment.py`를 실행하세요.")
+        return
+
+    from src.models.segmenter import SEGMENT_LABELS, get_segment_summary
+
+    df = load_data()
+
+    try:
+        summary = get_segment_summary(df)
+    except Exception as e:
+        st.error(f"세그먼트 분석 실패: {e}")
+        return
+
+    # KPI
+    st.subheader("세그먼트 분포")
+    c1, c2, c3, c4 = st.columns(4)
+    for i, (seg_name, row) in enumerate(summary.iterrows()):
+        col = [c1, c2, c3, c4][i % 4]
+        col.metric(
+            seg_name.upper(),
+            f"{row['count']:,.0f}명 ({row['ratio']:.1%})",
+            f"이탈률 {row['churn_rate']:.1%}",
+        )
+
+    st.divider()
+
+    # 세그먼트별 비교 차트
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("세그먼트별 이탈률")
+        fig = px.bar(
+            summary.reset_index(), x="segment", y="churn_rate",
+            color="churn_rate", color_continuous_scale="RdYlGn_r",
+            text_auto=".1%",
+        )
+        fig.update_layout(yaxis_title="이탈률")
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        st.subheader("세그먼트 크기")
+        fig = px.pie(
+            summary.reset_index(), values="count", names="segment",
+            color_discrete_sequence=px.colors.qualitative.Set2,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # 세그먼트별 피처 비교
+    st.subheader("세그먼트별 주요 지표 비교")
+    metrics_to_show = ["avg_playtime", "avg_level", "avg_purchases"]
+    fig = go.Figure()
+    for metric in metrics_to_show:
+        fig.add_trace(go.Bar(
+            x=summary.index, y=summary[metric], name=metric,
+        ))
+    fig.update_layout(barmode="group", xaxis_title="세그먼트")
+    st.plotly_chart(fig, use_container_width=True)
+
+    # 리텐션 전략
+    st.subheader("세그먼트별 리텐션 전략")
+    for seg_name, info in SEGMENT_LABELS.items():
+        with st.expander(f"**{seg_name.upper()}** - {info['description']}"):
+            for action in info["strategy"]:
+                st.markdown(f"- {action}")
+
+
+def page_monitoring():
+    """드리프트 모니터링 페이지."""
+    st.title("📡 모델 모니터링")
+
+    from src.monitoring.drift import calculate_psi, detect_data_drift
+
+    df = load_data()
+    feature_cols = get_feature_columns("kaggle")
+    numeric_features = feature_cols["numeric"]
+
+    # 데이터를 시간순으로 시뮬레이션 (앞쪽 = 학습, 뒤쪽 = 최근)
+    split_idx = int(len(df) * 0.7)
+    ref_data = df.iloc[:split_idx]
+    cur_data = df.iloc[split_idx:]
+
+    st.info(
+        f"기준 데이터: {len(ref_data):,}행 | "
+        f"최근 데이터: {len(cur_data):,}행"
+    )
+
+    # 데이터 드리프트
+    st.subheader("데이터 드리프트 (KS Test)")
+    drift_result = detect_data_drift(ref_data, cur_data, numeric_features)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("검사 피처 수", drift_result["total_features"])
+    c2.metric("드리프트 피처 수", len(drift_result["drifted_features"]))
+    drift_pct = drift_result["drift_ratio"]
+    c3.metric("드리프트 비율", f"{drift_pct:.1%}",
+              delta="정상" if drift_pct < 0.3 else "경고",
+              delta_color="normal" if drift_pct < 0.3 else "inverse")
+
+    # 피처별 드리프트 상세
+    details = drift_result["details"]
+    drift_df = pd.DataFrame([
+        {"피처": feat, "KS 통계량": d["statistic"], "p-value": d["p_value"],
+         "드리프트": "⚠️ YES" if d["drifted"] else "✅ NO"}
+        for feat, d in details.items()
+    ]).sort_values("p-value")
+    st.dataframe(drift_df, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # PSI 분석
+    st.subheader("PSI (Population Stability Index)")
+    psi_results = []
+    for feat in numeric_features:
+        ref_vals = ref_data[feat].dropna().values
+        cur_vals = cur_data[feat].dropna().values
+        if len(ref_vals) > 0 and len(cur_vals) > 0:
+            psi = calculate_psi(ref_vals, cur_vals)
+            if psi < 0.1:
+                status = "✅ 안정"
+            elif psi < 0.2:
+                status = "⚠️ 약간 변화"
+            else:
+                status = "🚨 유의미한 변화"
+            psi_results.append({"피처": feat, "PSI": round(psi, 4), "상태": status})
+
+    psi_df = pd.DataFrame(psi_results).sort_values("PSI", ascending=False)
+    st.dataframe(psi_df, use_container_width=True, hide_index=True)
+
+    # PSI 시각화
+    fig = px.bar(
+        psi_df, x="PSI", y="피처", orientation="h",
+        color="PSI", color_continuous_scale="RdYlGn_r",
+        title="피처별 PSI",
+    )
+    fig.add_vline(x=0.1, line_dash="dash", line_color="orange",
+                  annotation_text="약간 변화")
+    fig.add_vline(x=0.2, line_dash="dash", line_color="red",
+                  annotation_text="유의미한 변화")
+    fig.update_layout(height=500)
+    st.plotly_chart(fig, use_container_width=True)
+
+    # 예측 분포 비교
+    st.divider()
+    st.subheader("예측 분포 비교 (기준 vs 최근)")
+
+    model = load_model()
+    if model is not None:
+        cat_features = feature_cols["categorical"]
+        all_features = numeric_features + cat_features
+
+        for d in [ref_data, cur_data]:
+            for col in cat_features:
+                le = LabelEncoder()
+                d = d.copy()
+                d[col] = le.fit_transform(d[col].astype(str))
+
+        ref_enc = ref_data.copy()
+        cur_enc = cur_data.copy()
+        for col in cat_features:
+            le = LabelEncoder()
+            le.fit(pd.concat([ref_enc[col].astype(str), cur_enc[col].astype(str)]))
+            ref_enc[col] = le.transform(ref_enc[col].astype(str))
+            cur_enc[col] = le.transform(cur_enc[col].astype(str))
+
+        ref_proba = model.predict_proba(ref_enc[all_features])[:, 1]
+        cur_proba = model.predict_proba(cur_enc[all_features])[:, 1]
+
+        fig = go.Figure()
+        fig.add_trace(go.Histogram(
+            x=ref_proba, name="기준 데이터", opacity=0.7, nbinsx=30,
+        ))
+        fig.add_trace(go.Histogram(
+            x=cur_proba, name="최근 데이터", opacity=0.7, nbinsx=30,
+        ))
+        fig.update_layout(barmode="overlay", xaxis_title="이탈 확률",
+                          yaxis_title="빈도", title="예측 확률 분포 비교")
+        st.plotly_chart(fig, use_container_width=True)
+
+        c1, c2 = st.columns(2)
+        c1.metric("기준 평균 이탈 확률", f"{np.mean(ref_proba):.4f}")
+        c2.metric("최근 평균 이탈 확률", f"{np.mean(cur_proba):.4f}")
 
 
 def page_prediction():
@@ -280,7 +464,6 @@ def page_prediction():
         c1.metric("이탈 확률", f"{proba:.1%}")
         c2.markdown(f"### 위험 등급: :{color}[{risk}]")
 
-        # 게이지 차트
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
             value=proba * 100,
@@ -300,11 +483,17 @@ def page_prediction():
 
 
 # 사이드바 네비게이션
-page = st.sidebar.radio("페이지", ["개요", "모델 성능", "이탈 예측"])
+page = st.sidebar.radio("페이지", [
+    "개요", "모델 성능", "유저 세그먼트", "모니터링", "이탈 예측",
+])
 
 if page == "개요":
     page_overview()
 elif page == "모델 성능":
     page_model_performance()
+elif page == "유저 세그먼트":
+    page_segment()
+elif page == "모니터링":
+    page_monitoring()
 elif page == "이탈 예측":
     page_prediction()
