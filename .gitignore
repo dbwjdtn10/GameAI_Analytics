@@ -1,0 +1,51 @@
+# Data
+data/raw/
+data/processed/
+data/synthetic/
+*.csv
+*.parquet
+
+# Models
+*.pkl
+*.joblib
+*.h5
+mlflow/
+mlruns/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.env.local
+
+# DVC
+/data/*.dvc
+
+# Claude Code
+.claude/
+
+# Docker
+docker-compose.override.yml
