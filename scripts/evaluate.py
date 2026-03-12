@@ -5,19 +5,20 @@
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import joblib
-import numpy as np
-import pandas as pd
 import matplotlib
+import numpy as np
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import shap
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
-from src.config import RANDOM_STATE, TEST_SIZE, MODEL_DIR
+from src.config import MODEL_DIR, RANDOM_STATE, TEST_SIZE
 from src.data.loader import load_gaming_behavior
 from src.features.engineer import engineer_gaming_behavior_features, get_feature_columns
 

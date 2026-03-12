@@ -1,9 +1,9 @@
 """합성 데이터 생성 스크립트."""
 
 import argparse
+import sys
 from pathlib import Path
 
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.config import SYNTHETIC_DIR
@@ -36,7 +36,7 @@ def main():
     print(f"생성 완료: {output_path}")
     print(f"  총 유저: {len(df)}")
     print(f"  이탈률: {df['is_churned'].mean():.2%}")
-    print(f"  유저 타입 분포:")
+    print("  유저 타입 분포:")
     for user_type, count in df["user_type"].value_counts().items():
         print(f"    {user_type}: {count} ({count/len(df):.1%})")
 

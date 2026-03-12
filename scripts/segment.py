@@ -5,11 +5,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sklearn.preprocessing import LabelEncoder
 
 from src.data.loader import load_gaming_behavior
 from src.features.engineer import engineer_gaming_behavior_features
-from src.models.segmenter import train_segmenter, get_segment_summary
+from src.models.segmenter import get_segment_summary, train_segmenter
 
 
 def main():

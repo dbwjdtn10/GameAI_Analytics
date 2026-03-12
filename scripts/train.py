@@ -5,38 +5,39 @@
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import matplotlib
+
 matplotlib.use("Agg")  # 비대화형 백엔드 (GUI 없이 파일 저장만)
 
 import argparse
+
 import joblib
-import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
-from src.config import RANDOM_STATE, TEST_SIZE, MODEL_DIR
+from src.config import MODEL_DIR, RANDOM_STATE, TEST_SIZE
 from src.data.loader import load_gaming_behavior
 from src.features.engineer import engineer_gaming_behavior_features, get_feature_columns
-from src.models.trainer import (
-    get_baseline_model,
-    get_xgboost_model,
-    get_lgbm_model,
-    get_ensemble_voting,
-    get_ensemble_stacking,
-    tune_xgboost,
-    tune_lgbm,
-)
 from src.models.evaluator import (
-    evaluate_model,
-    print_evaluation_report,
-    plot_roc_curves,
     plot_confusion_matrix,
     plot_feature_importance,
+    plot_roc_curves,
+    print_evaluation_report,
 )
 from src.models.registry import log_experiment
+from src.models.trainer import (
+    get_baseline_model,
+    get_ensemble_stacking,
+    get_ensemble_voting,
+    get_lgbm_model,
+    get_xgboost_model,
+    tune_lgbm,
+    tune_xgboost,
+)
 
 
 def prepare_data():
@@ -72,7 +73,8 @@ def prepare_data():
     )
 
     print(f"  Train: {len(X_train):,}, Val: {len(X_val):,}, Test: {len(X_test):,}")
-    print(f"  이탈률 - Train: {y_train.mean():.2%}, Val: {y_val.mean():.2%}, Test: {y_test.mean():.2%}")
+    tr, va, te = y_train.mean(), y_val.mean(), y_test.mean()
+    print(f"  이탈률 - Train: {tr:.2%}, Val: {va:.2%}, Test: {te:.2%}")
     print(f"  피처 수: {len(all_features)}")
 
     return X_train, X_val, X_test, y_train, y_val, y_test, all_features, label_encoders
@@ -95,7 +97,9 @@ def train_and_evaluate(model, model_name, X_train, y_train, X_val, y_val,
     # 테스트 세트 평가
     y_test_pred = model.predict(X_test)
     y_test_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else None
-    test_metrics = print_evaluation_report(y_test, y_test_pred, y_test_proba, f"{model_name} (Test)")
+    test_metrics = print_evaluation_report(
+        y_test, y_test_pred, y_test_proba, f"{model_name} (Test)"
+    )
 
     # MLflow 기록
     all_metrics = {f"val_{k}": v for k, v in val_metrics.items()}
@@ -183,7 +187,8 @@ def main():
 
         stacking = get_ensemble_stacking(xgb_params, lgbm_params)
         results["Stacking"] = train_and_evaluate(
-            stacking, "StackingEnsemble", X_train, y_train, X_val, y_val, X_test, y_test, feature_names
+            stacking, "StackingEnsemble", X_train, y_train,
+            X_val, y_val, X_test, y_test, feature_names,
         )
 
     # 결과 비교
