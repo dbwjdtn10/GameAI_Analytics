@@ -2,10 +2,12 @@
 
 import pytest
 
+from src.config import COOKIE_CATS_PATH, GAMING_BEHAVIOR_PATH
 from src.data.loader import load_cookie_cats, load_gaming_behavior
 from src.data.synthetic import generate_synthetic_data
 
 
+@pytest.mark.skipif(not GAMING_BEHAVIOR_PATH.exists(), reason="Data file not found")
 class TestGamingBehaviorQuality:
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -39,6 +41,7 @@ class TestGamingBehaviorQuality:
         assert (self.df["PlayerLevel"] >= 0).all()
 
 
+@pytest.mark.skipif(not COOKIE_CATS_PATH.exists(), reason="Data file not found")
 class TestCookieCatsQuality:
     @pytest.fixture(autouse=True)
     def setup(self):

@@ -1,5 +1,6 @@
 import pytest
 
+from src.config import GAMING_BEHAVIOR_PATH
 from src.data.loader import load_gaming_behavior
 from src.data.synthetic import generate_synthetic_data
 from src.features.engineer import (
@@ -11,6 +12,8 @@ from src.features.engineer import (
 
 @pytest.fixture
 def gaming_df():
+    if not GAMING_BEHAVIOR_PATH.exists():
+        pytest.skip("Data file not found")
     return load_gaming_behavior()
 
 

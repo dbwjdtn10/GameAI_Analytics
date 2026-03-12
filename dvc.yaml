@@ -1,0 +1,40 @@
+stages:
+  prepare:
+    cmd: python -c "
+      from src.data.loader import load_gaming_behavior;
+      from src.features.engineer import engineer_gaming_behavior_features;
+      df = load_gaming_behavior();
+      df = engineer_gaming_behavior_features(df);
+      df.to_csv('data/processed/gaming_features.csv', index=False);
+      print(f'Prepared {len(df)} rows')
+      "
+    deps:
+      - src/data/loader.py
+      - src/features/engineer.py
+      - data/raw/gaming_behavior/online_gaming_behavior_dataset.csv
+    outs:
+      - data/processed/gaming_features.csv
+
+  train:
+    cmd: python scripts/train.py --tune --tune-trials 30
+    deps:
+      - scripts/train.py
+      - src/models/trainer.py
+      - src/models/evaluator.py
+      - data/processed/gaming_features.csv
+    outs:
+      - models/best_model.joblib
+    plots:
+      - models/roc_comparison.png
+      - models/confusion_matrix.png
+      - models/feature_importance.png
+
+  evaluate:
+    cmd: python scripts/evaluate.py
+    deps:
+      - scripts/evaluate.py
+      - models/best_model.joblib
+    plots:
+      - models/shap_summary.png
+      - models/shap_bar.png
+      - models/shap_waterfall_high_risk.png
