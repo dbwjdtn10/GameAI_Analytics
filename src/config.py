@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 # 프로젝트 루트
@@ -27,3 +28,22 @@ CHURN_LABEL = "is_churned"  # EngagementLevel=Low → 1, else → 0
 # API
 API_HOST = "0.0.0.0"
 API_PORT = 8000
+
+# Redis
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+CACHE_TTL_SECONDS = int(os.environ.get("CACHE_TTL_SECONDS", "300"))
+
+# JWT
+JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "gameai-dev-secret-key-change-in-production")
+JWT_ALGORITHM = "HS256"
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "30"))
+
+# Rate Limiting
+RATE_LIMIT = os.environ.get("RATE_LIMIT", "60/minute")
+
+# Feature Store
+FEATURE_STORE_DIR = ROOT_DIR / "feature_store"
+
+# ONNX
+ONNX_MODEL_PATH = MODEL_DIR / "best_model.onnx"
+USE_ONNX = os.environ.get("USE_ONNX", "false").lower() == "true"

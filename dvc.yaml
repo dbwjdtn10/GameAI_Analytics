@@ -1,16 +1,32 @@
 stages:
+  validate:
+    cmd: python -c "
+      from src.data.loader import load_gaming_behavior;
+      from src.data.validation import validate_raw_data;
+      df = load_gaming_behavior();
+      df = validate_raw_data(df);
+      print(f'Validation passed: {len(df)} rows OK')
+      "
+    deps:
+      - src/data/loader.py
+      - src/data/validation.py
+      - data/raw/gaming_behavior/online_gaming_behavior_dataset.csv
+
   prepare:
     cmd: python -c "
       from src.data.loader import load_gaming_behavior;
       from src.features.engineer import engineer_gaming_behavior_features;
+      from src.data.validation import validate_engineered_data;
       df = load_gaming_behavior();
       df = engineer_gaming_behavior_features(df);
+      df = validate_engineered_data(df);
       df.to_csv('data/processed/gaming_features.csv', index=False);
-      print(f'Prepared {len(df)} rows')
+      print(f'Prepared & validated {len(df)} rows')
       "
     deps:
       - src/data/loader.py
       - src/features/engineer.py
+      - src/data/validation.py
       - data/raw/gaming_behavior/online_gaming_behavior_dataset.csv
     outs:
       - data/processed/gaming_features.csv

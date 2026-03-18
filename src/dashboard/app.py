@@ -73,6 +73,18 @@ def get_test_predictions():
     return y_test, y_pred, y_proba
 
 
+def _encode_for_model(df):
+    """모델 입력용 인코딩."""
+    feature_cols = get_feature_columns("kaggle")
+    for col in feature_cols["categorical"]:
+        le = LabelEncoder()
+        le.fit(df[col].astype(str))
+        df[col] = le.transform(df[col].astype(str))
+    feature_path = MODEL_DIR / "feature_names.txt"
+    feature_names = feature_path.read_text().strip().split("\n")
+    return df[feature_names], feature_names
+
+
 def page_overview():
     """개요 페이지."""
     st.title("🎮 GameAI Analytics Dashboard")
@@ -285,7 +297,6 @@ def page_monitoring():
     feature_cols = get_feature_columns("kaggle")
     numeric_features = feature_cols["numeric"]
 
-    # 데이터를 시간순으로 시뮬레이션 (앞쪽 = 학습, 뒤쪽 = 최근)
     split_idx = int(len(df) * 0.7)
     ref_data = df.iloc[:split_idx]
     cur_data = df.iloc[split_idx:]
@@ -307,7 +318,6 @@ def page_monitoring():
               delta="정상" if drift_pct < 0.3 else "경고",
               delta_color="normal" if drift_pct < 0.3 else "inverse")
 
-    # 피처별 드리프트 상세
     details = drift_result["details"]
     drift_df = pd.DataFrame([
         {"피처": feat, "KS 통계량": d["statistic"], "p-value": d["p_value"],
@@ -337,7 +347,6 @@ def page_monitoring():
     psi_df = pd.DataFrame(psi_results).sort_values("PSI", ascending=False)
     st.dataframe(psi_df, use_container_width=True, hide_index=True)
 
-    # PSI 시각화
     fig = px.bar(
         psi_df, x="PSI", y="피처", orientation="h",
         color="PSI", color_continuous_scale="RdYlGn_r",
@@ -358,12 +367,6 @@ def page_monitoring():
     if model is not None:
         cat_features = feature_cols["categorical"]
         all_features = numeric_features + cat_features
-
-        for d in [ref_data, cur_data]:
-            for col in cat_features:
-                le = LabelEncoder()
-                d = d.copy()
-                d[col] = le.fit_transform(d[col].astype(str))
 
         ref_enc = ref_data.copy()
         cur_enc = cur_data.copy()
@@ -482,9 +485,312 @@ def page_prediction():
         st.plotly_chart(fig, use_container_width=True)
 
 
+def page_whatif():
+    """What-If 분석 페이지."""
+    st.title("🔬 What-If 분석")
+    st.markdown(
+        "피처 값을 변경하면 이탈 확률이 어떻게 변하는지 실시간으로 확인합니다. "
+        "**개입(Intervention) 효과를 시뮬레이션**하세요."
+    )
+
+    model = load_model()
+    if model is None:
+        st.error("학습된 모델이 없습니다.")
+        return
+
+    feature_path = MODEL_DIR / "feature_names.txt"
+    if not feature_path.exists():
+        st.error("피처 이름 파일이 없습니다.")
+        return
+
+    # 기본 유저 프로필
+    st.subheader("기준 유저 프로필")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        base_age = st.number_input("나이", 10, 100, 25, key="wi_age")
+        base_gender = st.selectbox("성별", ["Male", "Female"], key="wi_gender")
+        base_genre = st.selectbox("장르", [
+            "RPG", "FPS", "MOBA", "Sports", "Strategy",
+            "Simulation", "Action", "Adventure",
+        ], key="wi_genre")
+        base_diff = st.selectbox("난이도", ["Easy", "Medium", "Hard"], key="wi_diff")
+    with col2:
+        base_playtime = st.number_input("플레이 시간(h)", 0.0, 5000.0, 50.0, key="wi_pt")
+        base_sessions = st.number_input("주간 세션", 0, 50, 3, key="wi_sess")
+        base_duration = st.number_input("세션 시간(min)", 0.0, 600.0, 30.0, key="wi_dur")
+        base_location = st.selectbox("지역", [
+            "USA", "Europe", "Asia", "South America",
+            "Africa", "Australia", "Other",
+        ], key="wi_loc")
+    with col3:
+        base_level = st.number_input("레벨", 1, 200, 15, key="wi_lvl")
+        base_achievements = st.number_input("업적", 0, 500, 5, key="wi_ach")
+        base_purchases = st.number_input("구매 횟수", 0, 500, 1, key="wi_pur")
+
+    base_data = {
+        "Age": base_age, "Gender": base_gender, "Location": base_location,
+        "GameGenre": base_genre, "GameDifficulty": base_diff,
+        "PlayTimeHours": base_playtime, "SessionsPerWeek": base_sessions,
+        "AvgSessionDurationMinutes": base_duration,
+        "PlayerLevel": base_level, "AchievementsUnlocked": base_achievements,
+        "InGamePurchases": base_purchases,
+    }
+
+    # 기준 예측
+    raw_base = pd.DataFrame([base_data])
+    raw_base = engineer_gaming_behavior_features(raw_base)
+    X_base, feature_names = _encode_for_model(raw_base)
+    base_proba = model.predict_proba(X_base)[0, 1]
+
+    st.metric("기준 이탈 확률", f"{base_proba:.1%}")
+
+    st.divider()
+
+    # What-If: 수치형 피처 슬라이더
+    st.subheader("개입 시뮬레이션")
+    st.markdown("아래 슬라이더로 값을 변경하면 이탈 확률 변화를 실시간으로 확인합니다.")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        wi_sessions = st.slider(
+            "주간 세션 수 변경", 0, 30, base_sessions, key="wi_s_sessions"
+        )
+        wi_playtime = st.slider(
+            "플레이 시간(h) 변경", 0.0, 3000.0, base_playtime, step=10.0, key="wi_s_pt"
+        )
+        wi_purchases = st.slider(
+            "구매 횟수 변경", 0, 200, base_purchases, key="wi_s_pur"
+        )
+    with c2:
+        wi_duration = st.slider(
+            "세션 시간(min) 변경", 0.0, 300.0, base_duration, step=5.0, key="wi_s_dur"
+        )
+        wi_level = st.slider(
+            "레벨 변경", 1, 200, base_level, key="wi_s_lvl"
+        )
+        wi_achievements = st.slider(
+            "업적 수 변경", 0, 300, base_achievements, key="wi_s_ach"
+        )
+
+    # What-If 예측
+    wi_data = base_data.copy()
+    wi_data.update({
+        "SessionsPerWeek": wi_sessions,
+        "PlayTimeHours": wi_playtime,
+        "InGamePurchases": wi_purchases,
+        "AvgSessionDurationMinutes": wi_duration,
+        "PlayerLevel": wi_level,
+        "AchievementsUnlocked": wi_achievements,
+    })
+
+    raw_wi = pd.DataFrame([wi_data])
+    raw_wi = engineer_gaming_behavior_features(raw_wi)
+    X_wi, _ = _encode_for_model(raw_wi)
+    wi_proba = model.predict_proba(X_wi)[0, 1]
+
+    delta = wi_proba - base_proba
+    c1, c2, c3 = st.columns(3)
+    c1.metric("변경 후 이탈 확률", f"{wi_proba:.1%}")
+    c2.metric("변화량", f"{delta:+.1%}",
+              delta_color="inverse" if delta > 0 else "normal")
+    c3.metric(
+        "효과",
+        "개선" if delta < -0.05 else ("악화" if delta > 0.05 else "미미"),
+    )
+
+    # 피처별 민감도 분석 (Partial Dependence)
+    st.divider()
+    st.subheader("피처 민감도 분석 (Partial Dependence)")
+    st.markdown("선택한 피처를 변화시켰을 때 이탈 확률이 어떻게 변하는지 보여줍니다.")
+
+    sensitivity_feature = st.selectbox(
+        "분석할 피처",
+        ["SessionsPerWeek", "PlayTimeHours", "AvgSessionDurationMinutes",
+         "PlayerLevel", "AchievementsUnlocked", "InGamePurchases"],
+        key="wi_sens_feat",
+    )
+
+    # 범위 설정
+    ranges = {
+        "SessionsPerWeek": (0, 30, 31),
+        "PlayTimeHours": (0, 2000, 50),
+        "AvgSessionDurationMinutes": (5, 300, 50),
+        "PlayerLevel": (1, 150, 50),
+        "AchievementsUnlocked": (0, 200, 50),
+        "InGamePurchases": (0, 100, 50),
+    }
+    lo, hi, n_points = ranges[sensitivity_feature]
+    values = np.linspace(lo, hi, n_points)
+
+    probas = []
+    for v in values:
+        tmp = base_data.copy()
+        tmp[sensitivity_feature] = float(v)
+        raw_tmp = pd.DataFrame([tmp])
+        raw_tmp = engineer_gaming_behavior_features(raw_tmp)
+        X_tmp, _ = _encode_for_model(raw_tmp)
+        p = model.predict_proba(X_tmp)[0, 1]
+        probas.append(p)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=values, y=probas, mode="lines+markers",
+        name="이탈 확률",
+        line=dict(width=3),
+        marker=dict(size=4),
+    ))
+    fig.add_hline(y=0.5, line_dash="dash", line_color="red",
+                  annotation_text="이탈 임계값 (0.5)")
+    fig.add_vline(x=base_data[sensitivity_feature], line_dash="dot",
+                  line_color="blue", annotation_text="현재 값")
+    fig.update_layout(
+        xaxis_title=sensitivity_feature,
+        yaxis_title="이탈 확률",
+        yaxis_range=[0, 1],
+        title=f"{sensitivity_feature} 변화에 따른 이탈 확률",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def page_business_impact():
+    """비즈니스 임팩트 분석 페이지."""
+    st.title("💰 비즈니스 임팩트 분석")
+    st.markdown("이탈 예측 모델의 **비즈니스 가치(ROI)** 를 정량화합니다.")
+
+    model = load_model()
+    y_test, y_pred, y_proba = get_test_predictions()
+    if model is None or y_test is None:
+        st.error("모델 또는 테스트 데이터가 없습니다.")
+        return
+
+    # 비즈니스 파라미터 설정
+    st.subheader("비즈니스 파라미터 설정")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        avg_ltv = st.number_input("유저당 평균 LTV ($)", 10, 10000, 150)
+        monthly_active = st.number_input("월간 활성 유저 (MAU)", 1000, 10000000, 100000)
+    with c2:
+        retention_cost = st.number_input("유저당 리텐션 비용 ($)", 0.1, 100.0, 5.0)
+        retention_success_rate = st.slider("리텐션 성공률 (%)", 5, 80, 25) / 100
+    with c3:
+        current_churn_rate = st.slider("현재 월간 이탈률 (%)", 1, 50, 25) / 100
+
+    st.divider()
+
+    # 임계값별 비용-편익 분석
+    st.subheader("임계값(Threshold) 최적화")
+    st.markdown("이탈 예측 임계값에 따른 비용-편익 트레이드오프를 분석합니다.")
+
+    thresholds = np.arange(0.1, 0.95, 0.05)
+    results = []
+    for t in thresholds:
+        preds = (y_proba >= t).astype(int)
+        tp = ((preds == 1) & (y_test.values == 1)).sum()  # 이탈 정확 예측
+        fp = ((preds == 1) & (y_test.values == 0)).sum()  # 오탐 (유지 유저에 불필요 개입)
+        fn = ((preds == 0) & (y_test.values == 1)).sum()  # 미탐 (이탈 놓침)
+
+        # 비용 계산
+        intervention_cost = (tp + fp) * retention_cost
+        saved_revenue = tp * retention_success_rate * avg_ltv
+        lost_revenue = fn * avg_ltv
+        net_benefit = saved_revenue - intervention_cost
+
+        precision = tp / max(tp + fp, 1)
+        recall = tp / max(tp + fn, 1)
+
+        results.append({
+            "threshold": round(t, 2),
+            "precision": round(precision, 3),
+            "recall": round(recall, 3),
+            "true_positives": int(tp),
+            "false_positives": int(fp),
+            "false_negatives": int(fn),
+            "intervention_cost": round(intervention_cost, 0),
+            "saved_revenue": round(saved_revenue, 0),
+            "lost_revenue": round(lost_revenue, 0),
+            "net_benefit": round(net_benefit, 0),
+        })
+
+    results_df = pd.DataFrame(results)
+    best_idx = results_df["net_benefit"].idxmax()
+    best_threshold = results_df.loc[best_idx, "threshold"]
+    best_benefit = results_df.loc[best_idx, "net_benefit"]
+
+    st.success(
+        f"최적 임계값: **{best_threshold:.2f}** "
+        f"(순 이익: **${best_benefit:,.0f}** / 테스트 세트 기준)"
+    )
+
+    # 차트: 순이익 vs 임계값
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=results_df["threshold"], y=results_df["net_benefit"],
+        mode="lines+markers", name="순 이익 ($)",
+        line=dict(width=3, color="#2ecc71"),
+    ))
+    fig.add_trace(go.Scatter(
+        x=results_df["threshold"], y=results_df["intervention_cost"],
+        mode="lines", name="개입 비용 ($)",
+        line=dict(dash="dash", color="#e74c3c"),
+    ))
+    fig.add_trace(go.Scatter(
+        x=results_df["threshold"], y=results_df["saved_revenue"],
+        mode="lines", name="보존 매출 ($)",
+        line=dict(dash="dash", color="#3498db"),
+    ))
+    fig.add_vline(x=best_threshold, line_dash="dot", line_color="green",
+                  annotation_text=f"최적: {best_threshold}")
+    fig.update_layout(
+        xaxis_title="이탈 예측 임계값",
+        yaxis_title="금액 ($)",
+        title="임계값별 비용-편익 분석",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # 상세 테이블
+    with st.expander("임계값별 상세 결과"):
+        st.dataframe(results_df, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # 연간 ROI 추정
+    st.subheader("연간 ROI 추정")
+
+    monthly_at_risk = monthly_active * current_churn_rate
+    from sklearn.metrics import precision_score, recall_score
+
+    opt_preds = (y_proba >= best_threshold).astype(int)
+    opt_precision = precision_score(y_test, opt_preds)
+    opt_recall = recall_score(y_test, opt_preds)
+
+    monthly_detected = monthly_at_risk * opt_recall
+    monthly_false_alerts = (monthly_active - monthly_at_risk) * (1 - opt_precision) * (
+        opt_recall / max(1 - opt_recall, 0.01)
+    )
+    monthly_saved = monthly_detected * retention_success_rate
+    monthly_revenue_saved = monthly_saved * avg_ltv
+    monthly_cost = (monthly_detected + monthly_false_alerts) * retention_cost
+    monthly_net = monthly_revenue_saved - monthly_cost
+    annual_net = monthly_net * 12
+    roi = (monthly_revenue_saved - monthly_cost) / max(monthly_cost, 1) * 100
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("월간 이탈 위험 유저", f"{monthly_at_risk:,.0f}")
+    c2.metric("월간 탐지 유저", f"{monthly_detected:,.0f}")
+    c3.metric("월간 보존 유저", f"{monthly_saved:,.0f}")
+    c4.metric("ROI", f"{roi:,.0f}%")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("월간 보존 매출", f"${monthly_revenue_saved:,.0f}")
+    c2.metric("월간 개입 비용", f"${monthly_cost:,.0f}")
+    c3.metric("연간 순 이익", f"${annual_net:,.0f}",
+              delta=f"월 ${monthly_net:,.0f}")
+
+
 # 사이드바 네비게이션
 page = st.sidebar.radio("페이지", [
-    "개요", "모델 성능", "유저 세그먼트", "모니터링", "이탈 예측",
+    "개요", "모델 성능", "유저 세그먼트", "모니터링",
+    "이탈 예측", "What-If 분석", "비즈니스 임팩트",
 ])
 
 if page == "개요":
@@ -497,3 +803,7 @@ elif page == "모니터링":
     page_monitoring()
 elif page == "이탈 예측":
     page_prediction()
+elif page == "What-If 분석":
+    page_whatif()
+elif page == "비즈니스 임팩트":
+    page_business_impact()

@@ -72,12 +72,20 @@ class BatchPredictionResponse(BaseModel):
     high_risk_count: int = Field(..., description="고위험(high+critical) 유저 수")
 
 
+class ComponentHealth(BaseModel):
+    """서비스 컴포넌트 상태."""
+
+    status: str
+    latency_ms: float | None = None
+
+
 class HealthResponse(BaseModel):
     """헬스 체크 응답."""
 
     status: str
     model_loaded: bool
     model_type: str | None = None
+    components: dict[str, ComponentHealth] = Field(default_factory=dict)
 
 
 class ErrorResponse(BaseModel):
