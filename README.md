@@ -8,6 +8,42 @@
 [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Tests](https://img.shields.io/badge/tests-63%20passed-brightgreen.svg)]()
 [![Coverage](https://img.shields.io/badge/coverage-pytest--cov-blue.svg)]()
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://gameaianalytics-rsngz9wnuzq2ntnxccx5c8.streamlit.app/)
+
+---
+
+## Recent Updates
+
+### v2.0 — Production-Grade Upgrade (Latest)
+- **Observability 스택 구축** — Prometheus 커스텀 메트릭 10종 + Grafana 대시보드 10패널 + 알림 규칙 6종
+- **구조화된 로깅** — structlog 기반 JSON 로깅 + request_id 추적
+- **API 보안 강화** — JWT 인증 추가, Redis 비동기 캐싱, Rate Limiting (slowapi), CORS 설정
+- **데이터 품질 검증** — Pandera 스키마 3종 (Raw/Engineered/Inference) + DVC validate 스테이지 통합
+- **모델 최적화** — ONNX Runtime 변환 + 추론 벤치마크 (p50/p95/p99)
+- **Feature Store** — 경량 커스텀 Feature Store로 Training-Serving Skew 방지
+- **대시보드 확장** — What-If 분석 (PDP) + 비즈니스 임팩트 ROI 계산기 추가 → 총 7페이지
+- **부하 테스트** — Locust 시나리오 4종 (100~1000 동시 유저) + API 벤치마크 스크립트
+- **CI/CD 강화** — 3-job 파이프라인 (린트+테스트 / 모델 검증 게이트 / Docker 빌드)
+- **인프라 확장** — Docker Compose 7 서비스 (Redis, Prometheus, Grafana 추가)
+- **테스트 확장** — 63개 (JWT, Pandera, Feature Store, Prometheus 메트릭 등 18개 추가)
+- **비즈니스 분석 노트북** — 06_business_impact (LTV 추정, 임계값 최적화, ROI, 민감도 분석)
+
+### v1.5 — Analytics & Segmentation
+- **유저 세그먼트** — K-Means 4개 클러스터 (Hardcore/Casual/At Risk/New User) + 리텐션 전략 자동 제안
+- **세그먼트 API** — `POST /api/v1/segment/classify` 엔드포인트 추가
+- **모델 정보 API** — `GET /api/v1/model/info`, `/features/importance` 추가
+- **예측 응답 강화** — top_risk_factors + recommended_actions 포함
+- **요청 로깅 미들웨어** — 응답 시간 헤더 + 구조화된 요청 로그
+- **모델 회귀 테스트** — AUC-ROC ≥ 0.90, Accuracy ≥ 0.85 성능 보장 테스트
+
+### v1.0 — MLOps Pipeline
+- **Airflow DAG** — 주간 재학습 (드리프트 체크 → 조건부 학습 → 자동 배포)
+- **DVC 파이프라인** — validate → prepare → train → evaluate 4-stage
+- **PostgreSQL 통합** — DB 스키마 + 분석 쿼리 + 데이터 적재 모듈
+- **분석 노트북** — 03~05 (피처 엔지니어링, 모델 비교, A/B 테스트)
+- **대시보드 페이지 추가** — 유저 세그먼트 뷰 + 드리프트 모니터링
+- **pre-commit** — Ruff + 표준 훅 설정
+- **CI-safe 테스트** — 데이터/모델 파일 부재 시 자동 스킵
 
 ---
 
